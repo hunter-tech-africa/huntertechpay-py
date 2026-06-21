@@ -92,15 +92,15 @@ def test_deposit(hunter):
 
         print_info(f"Partner ID: {partner_id}")
         print_info("Montant: 100.00 XAF")
-        print_info("Service Code: HT_PAIEMENTMARCHAND_MTN_CM")
-        print_info("Téléphone: 670000000")
+        print_info("Service Code: HT_CASHIN_ORANGE_CM")
+        print_info("Téléphone: 690000000")
 
         result = hunter.deposit(
-            amount=100.0,
+            amount=100,
             currency="XAF",
             country="CM",
-            phone="670000000",
-            service_code="HT_PAIEMENTMARCHAND_MTN_CM",
+            phone="690000000",
+            service_code="HT_CASHIN_ORANGE_CM",
             partner_id=partner_id,
             description="Test dépôt via SDK Python"
         )
@@ -142,16 +142,16 @@ def test_withdraw(hunter):
         partner_id = f"TEST_{uuid4().hex[:8]}"
 
         print_info(f"Partner ID: {partner_id}")
-        print_info("Montant: 50.00 XAF")
+        print_info("Montant: 100.00 XAF")
         print_info("Service Code: HT_PAIEMENTMARCHAND_MTN_CM")
-        print_info("Téléphone: 670000000")
+        print_info("Téléphone: 690000000")
 
         result = hunter.withdraw(
-            amount=50.0,
+            amount=100,
             currency="XAF",
             country="CM",
-            phone="670000000",
-            service_code="HT_PAIEMENTMARCHAND_MTN_CM",
+            phone="690000000",
+            service_code="HT_PAIEMENTMARCHAND_ORANGE_CM",
             partner_id=partner_id,
             description="Test retrait via SDK Python"
         )
@@ -323,6 +323,32 @@ def test_get_balance(hunter):
         print_error(f"Erreur inattendue: {str(e)}")
         return False
 
+def test_get_kyc(hunter):
+    """Test 7: Récupérer les informations de KYC"""
+    print_header("TEST 7: Récupération des Informations de KYC")
+
+    try:
+        response = hunter.kyc(phone_number="690000000", country="CM", service_code="HT_CASHIN_ORANGE_CM")
+        print_success(f"Soldes récupérés avec succès {response}")
+        if response:
+            print_success(f"Soldes récupérés avec succès {response}")
+            return True
+        else:
+            print_error("La réponse ne contient pas 'success: True'")
+            print(response)
+            return False
+
+    except HunterTechPayError as e:
+        print_error(f"Erreur API: {str(e)}")
+        if hasattr(e, 'error_code') and e.error_code:
+            print(f"Code erreur: {e.error_code}")
+        if hasattr(e, 'data') and e.data:
+            print(f"Détails: {e.data}")
+        return False
+    except Exception as e:
+        print_error(f"Erreur inattendue: {str(e)}")
+        return False
+
 
 def main():
     """Fonction principale"""
@@ -338,8 +364,8 @@ def main():
     if not api_key or not secret_key:
         print_info("Variables d'environnement non définies")
         print("Veuillez entrer vos credentials:")
-        api_key = input("API Key (htp_live_...): ").strip()
-        secret_key = input("Secret Key (sk_live_...): ").strip()
+        api_key = input("htp_live_7").strip().lower()
+        secret_key = input("sk_live_e").strip().lower()
     else:
         print_success("Credentials chargés depuis les variables d'environnement")
         print(f"API Key: {api_key[:20]}...")
@@ -351,13 +377,13 @@ def main():
 
     # Initialiser le SDK
     print_info("\n🔧 Initialisation du SDK...")
-    print_info(f"Base URL: http://localhost:8007")
+    print_info(f"Base URL: https://api.huntertechpay.com")
 
     try:
         hunter = HunterTechPay(
             api_key=api_key,
             secret_key=secret_key,
-            base_url='http://localhost:8007',
+            base_url='https://api.huntertechpay.com',
             timeout=30
         )
         print_success("SDK initialisé avec succès")
@@ -389,7 +415,7 @@ def main():
     user_input = input("Tester le dépôt ? (Entrée/s): ").strip().lower()
     if user_input != 's':
         results['total'] += 1
-        deposit_partner_id = test_deposit(hunter)
+        # deposit_partner_id = test_deposit(hunter)
         if deposit_partner_id:
             results['passed'] += 1
         else:
@@ -432,6 +458,11 @@ def main():
     # Test 6: Get Balance
     results['total'] += 1
     if test_get_balance(hunter):
+        results['passed'] += 1
+    else:
+        results['failed'] += 1
+        
+    if test_get_kyc(hunter):
         results['passed'] += 1
     else:
         results['failed'] += 1

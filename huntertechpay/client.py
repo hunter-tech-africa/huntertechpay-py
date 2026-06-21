@@ -117,7 +117,6 @@ class HunterTechPay:
             TimeoutError: On request timeout
         """
         url = urljoin(self.base_url, endpoint)
-
         # Prepare request payload and signature
         if method in ('POST', 'PUT', 'PATCH'):
             # For requests with body, sign the JSON payload
@@ -152,6 +151,7 @@ class HunterTechPay:
             if response.status_code in constants.SUCCESS_STATUS_CODES:
                 return response.json()
 
+            print(f"Making {response.json()}")
             # Handle error responses
             # Check if we should retry
             if (retry_count < self.max_retries and
@@ -465,7 +465,7 @@ class HunterTechPay:
         self,
         phone_number: str,
         country: str,
-        provider_code: str,
+        service_code: str,
         partner_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> models.KYCVerification:
@@ -478,7 +478,7 @@ class HunterTechPay:
         Args:
             phone_number: Phone number to verify (e.g., '+237690000000' or '690000000')
             country: Country code (e.g., 'CM', 'SN', 'CI')
-            provider_code: Provider code (e.g., 'orange_cm', 'mtn_cm')
+            service_code: Service code (e.g., 'HT_PAIEMENTMARCHAND_ORANGE_CM', 'HT_PAIEMENTMARCHAND_MTN_CM')
             partner_id: Optional unique reference for this verification
             metadata: Optional custom metadata dictionary
 
@@ -493,7 +493,7 @@ class HunterTechPay:
             >>> kyc_result = hunter.kyc(
             ...     phone_number='+237690000000',
             ...     country='CM',
-            ...     provider_code='orange_cm',
+            ...     service_code='HT_PAIEMENTMARCHAND_ORANGE_CM',
             ...     partner_id='KYC-123'
             ... )
             >>> print(f"Status: {kyc_result.status}")
@@ -506,13 +506,13 @@ class HunterTechPay:
         if not country or not isinstance(country, str):
             raise validators.ValidationError("country must be a non-empty string")
 
-        if not provider_code or not isinstance(provider_code, str):
-            raise validators.ValidationError("provider_code must be a non-empty string")
+        if not service_code or not isinstance(service_code, str):
+            raise validators.ValidationError("service_code must be a non-empty string")
 
         payload = {
             'phone_number': phone_number,
             'country': country.upper(),
-            'provider_code': provider_code
+            'service_code': service_code
         }
 
         if partner_id:
@@ -520,7 +520,7 @@ class HunterTechPay:
 
         if metadata:
             payload['metadata'] = metadata
-
+        
         data = self._request('POST', constants.ENDPOINT_KYC, data=payload)
 
         return models.KYCVerification.from_dict(data)
