@@ -364,8 +364,8 @@ def main():
     if not api_key or not secret_key:
         print_info("Variables d'environnement non définies")
         print("Veuillez entrer vos credentials:")
-        api_key = input("htp_live_7").strip().lower()
-        secret_key = input("sk_live_e").strip().lower()
+        api_key = input("htp_live_7 : ").strip().lower()
+        secret_key = input("sk_live_e : ").strip().lower()
     else:
         print_success("Credentials chargés depuis les variables d'environnement")
         print(f"API Key: {api_key[:20]}...")

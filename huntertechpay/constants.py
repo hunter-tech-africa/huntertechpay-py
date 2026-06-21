@@ -8,7 +8,7 @@ including country codes, currencies, transaction types, and status values.
 from typing import Dict, List, Set
 
 # SDK Version
-SDK_VERSION = "2.1.0"  # Updated for partner_id support
+SDK_VERSION = "1.0.1"  # Improved error handling - exposes complete API responses
 
 # API Endpoints
 DEFAULT_BASE_URL = "http://localhost:8007"

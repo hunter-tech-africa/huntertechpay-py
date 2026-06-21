@@ -6,6 +6,7 @@ Each exception provides detailed error information to help developers
 debug and handle errors appropriately.
 """
 
+import json
 from typing import Optional, Dict, Any
 
 
@@ -18,9 +19,10 @@ class HunterTechPayError(Exception):
 
     Attributes:
         message (str): Human-readable error message
+        api_message (str): Original error message from API (unmodified)
         status_code (int): HTTP status code (if applicable)
-        error_code (str): Machine-readable error code
-        data (dict): Additional error context/data
+        error_code (str): Machine-readable error code from API
+        data (dict): Complete API response data (all fields from API)
         request_id (str): Request ID for tracing (if available)
     """
 
@@ -30,13 +32,16 @@ class HunterTechPayError(Exception):
         status_code: Optional[int] = None,
         error_code: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
-        request_id: Optional[str] = None
+        request_id: Optional[str] = None,
+        api_message: Optional[str] = None,
+        **kwargs  # Ignore extra params for backward compatibility
     ):
         super().__init__(message)
         self.message = message
+        self.api_message = api_message or message  # Original API message
         self.status_code = status_code
         self.error_code = error_code
-        self.data = data or {}
+        self.data = data or {}  # Complete API response
         self.request_id = request_id
 
     def __str__(self) -> str:
@@ -47,6 +52,15 @@ class HunterTechPayError(Exception):
             parts.append(f"Code: {self.error_code}")
         if self.request_id:
             parts.append(f"Request ID: {self.request_id}")
+
+        # Add additional error details from API response
+        if self.data:
+            # Filter out fields already displayed
+            excluded_keys = {'detail', 'message', 'error', 'error_code', 'error_message', 'code'}
+            extra_details = {k: v for k, v in self.data.items() if k not in excluded_keys}
+            if extra_details:
+                parts.append(f"Details: {json.dumps(extra_details)}")
+
         return " | ".join(parts)
 
     def __repr__(self) -> str:
@@ -56,6 +70,53 @@ class HunterTechPayError(Exception):
             f"status_code={self.status_code}, "
             f"error_code={self.error_code!r})"
         )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert exception to dictionary format with complete API response.
+
+        Returns:
+            dict: Exception details including complete API response
+
+        Example:
+            >>> try:
+            ...     hunter.deposit(...)
+            ... except HunterTechPayError as e:
+            ...     error_info = e.to_dict()
+            ...     print(f"Message: {error_info['message']}")
+            ...     print(f"API message: {error_info['api_message']}")
+            ...     print(f"API response: {error_info['data']}")
+        """
+        return {
+            'error_type': self.__class__.__name__,
+            'message': self.message,
+            'api_message': self.api_message,  # Original message from API
+            'status_code': self.status_code,
+            'error_code': self.error_code,
+            'request_id': self.request_id,
+            'data': self.data  # Complete API response
+        }
+
+    def get_detail(self, key: str, default: Any = None) -> Any:
+        """
+        Get specific detail from error data.
+
+        Args:
+            key: The key to retrieve from error data
+            default: Default value if key not found
+
+        Returns:
+            The value associated with the key, or default if not found
+
+        Example:
+            >>> try:
+            ...     hunter.withdraw(...)
+            ... except InsufficientBalanceError as e:
+            ...     available = e.get_detail('available_balance', 0)
+            ...     required = e.get_detail('required_balance', 0)
+            ...     print(f"Need {required}, but only {available} available")
+        """
+        return self.data.get(key, default)
 
 
 class AuthenticationError(HunterTechPayError):
@@ -317,7 +378,7 @@ STATUS_CODE_TO_EXCEPTION = {
 
 def exception_from_response(response, message: Optional[str] = None) -> HunterTechPayError:
     """
-    Create appropriate exception from HTTP response.
+    Create appropriate exception from HTTP response with complete API response.
 
     Args:
         response: HTTP response object
@@ -327,42 +388,80 @@ def exception_from_response(response, message: Optional[str] = None) -> HunterTe
         HunterTechPayError: Appropriate exception subclass based on status code
     """
     status_code = response.status_code
+    api_message = None  # Original message from API
 
     # Try to parse error details from response
     try:
+        # Parse JSON response - this is the complete API response
         data = response.json()
-        if not message:
-            message = data.get('detail') or data.get('message') or data.get('error', '')
-        error_code = data.get('error_code')
-        request_id = response.headers.get('X-Request-ID')
-    except Exception:
-        data = {}
-        error_code = None
-        request_id = None
-        if not message:
-            message = f"HTTP {status_code}: {response.reason}"
 
-    # Convert message to string if it's a list
+        # Extract original API message (unmodified)
+        api_message = (
+            data.get('detail') or
+            data.get('message') or
+            data.get('error') or
+            data.get('error_message') or
+            ''
+        )
+
+        # Use custom message if provided, otherwise use API message
+        if not message:
+            message = api_message
+
+        error_code = data.get('error_code') or data.get('code')
+        request_id = response.headers.get('X-Request-ID') or response.headers.get('X-Hunter-Request-ID')
+
+    except Exception:
+        # If JSON parsing fails, try to get response text
+        try:
+            response_text = response.text[:1000] if response.text else ""
+            if response_text:
+                # Store raw response text as data
+                data = {'raw_response': response_text}
+                api_message = response_text
+                if not message:
+                    message = f"HTTP {status_code}: {response.reason} - {response_text}"
+            else:
+                data = {}
+                if not message:
+                    message = f"HTTP {status_code}: {response.reason}"
+        except Exception:
+            data = {}
+            if not message:
+                message = f"HTTP {status_code}: {response.reason}"
+
+        error_code = None
+        request_id = response.headers.get('X-Request-ID') or response.headers.get('X-Hunter-Request-ID')
+
+    # Convert message to string if it's a list (some APIs return lists of errors)
     if isinstance(message, list):
         message = '; '.join(str(m) for m in message)
 
     # Ensure message is a string
-    message_str = str(message) if message else ""
+    message_str = str(message) if message else f"HTTP {status_code}"
+
+    # Preserve original API message
+    if not api_message:
+        api_message = message_str
+
+    # Common exception parameters
+    exception_params = {
+        'message': message_str,
+        'api_message': api_message,
+        'status_code': status_code,
+        'error_code': error_code,
+        'data': data,
+        'request_id': request_id
+    }
 
     # Special cases based on message content
     if message_str and 'insufficient balance' in message_str.lower():
-        return InsufficientBalanceError(message, status_code=status_code, data=data, request_id=request_id)
+        return InsufficientBalanceError(**exception_params)
 
     if message_str and 'frozen' in message_str.lower():
-        return FrozenAccountError(message, status_code=status_code, data=data, request_id=request_id)
+        return FrozenAccountError(**exception_params)
 
     # Use status code mapping
     exception_class = STATUS_CODE_TO_EXCEPTION.get(status_code, HunterTechPayError)
 
-    return exception_class(
-        message=message,
-        status_code=status_code,
-        error_code=error_code,
-        data=data,
-        request_id=request_id
-    )
+    return exception_class(**exception_params)

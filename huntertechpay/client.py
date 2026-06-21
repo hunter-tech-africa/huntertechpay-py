@@ -151,7 +151,6 @@ class HunterTechPay:
             if response.status_code in constants.SUCCESS_STATUS_CODES:
                 return response.json()
 
-            print(f"Making {response.json()}")
             # Handle error responses
             # Check if we should retry
             if (retry_count < self.max_retries and

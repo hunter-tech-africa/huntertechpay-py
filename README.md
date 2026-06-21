@@ -535,8 +535,22 @@ HUNTER_SECRET_KEY = os.environ.get('HUNTER_SECRET_KEY')
 
 ## Error Handling
 
+The SDK provides comprehensive error handling with detailed API error information.
+
+### Basic Error Handling
+
 ```python
-from huntertechpay import HunterTechPay, HunterTechPayError
+from huntertechpay import HunterTechPay
+from huntertechpay.exceptions import (
+    HunterTechPayError,
+    ValidationError,
+    AuthenticationError,
+    PaymentError,
+    InsufficientBalanceError,
+    NotFoundError,
+    NetworkError,
+    ServerError
+)
 
 hunter = HunterTechPay(
     api_key=os.environ['HUNTER_API_KEY'],
@@ -549,41 +563,152 @@ try:
         currency='XAF',
         country='CM',
         phone='+237690000000',
-        provider='orange_money',
-        reference='DEP_001'
+        service_code='OM_CM_CASHIN',
+        partner_id='DEP_001'
     )
 
 except HunterTechPayError as e:
-    print(f"Error code: {e.status_code}")
-    print(f"Message: {e.message}")
-    print(f"Data: {e.data}")
+    # Print complete error details
+    print(f"Error: {e}")
+    # Output: "Invalid phone number | Status: 400 | Code: VALIDATION_ERROR | Details: {"field": "phone"}"
 
-    # Specific error handling by code
-    if e.status_code == 400:
-        if 'Insufficient balance' in str(e):
-            print('Insufficient balance')
-        elif 'Invalid currency' in str(e):
-            print('Invalid currency for this country')
-        else:
-            print(f'Invalid parameters: {e}')
-
-    elif e.status_code == 403:
-        if 'frozen' in str(e):
-            print('Wallet frozen')
-        elif 'CASHOUT is disabled' in str(e):
-            print('Withdrawal disabled for your account')
-        else:
-            print(f'Access denied: {e}')
-
-    elif e.status_code == 404:
-        print('Provider or wallet not found')
-
-    else:
-        print(f'Error: {e}')
-
-except Exception as e:
-    print(f'Network error: {e}')
+    # Access error properties
+    print(f"Status code: {e.status_code}")    # HTTP status code
+    print(f"Message: {e.message}")            # Error message
+    print(f"Error code: {e.error_code}")      # API error code
+    print(f"Request ID: {e.request_id}")      # For support/debugging
+    print(f"Data: {e.data}")                  # Full API response data
 ```
+
+### Accessing Specific Error Details
+
+```python
+try:
+    withdrawal = hunter.withdraw(
+        amount=100000.00,
+        currency='XAF',
+        country='CM',
+        phone='+237670000000',
+        service_code='MTN_CM_CASHOUT'
+    )
+
+except InsufficientBalanceError as e:
+    # Use get_detail() to access specific fields from API response
+    available = e.get_detail('available_balance', 0)
+    required = e.get_detail('required_balance', 0)
+    currency = e.get_detail('currency', 'XAF')
+
+    print(f"Insufficient balance!")
+    print(f"Required: {required} {currency}")
+    print(f"Available: {available} {currency}")
+    print(f"Short by: {required - available} {currency}")
+```
+
+### Getting Complete Error Information
+
+```python
+try:
+    result = hunter.check_status('INVALID_PARTNER_ID')
+
+except NotFoundError as e:
+    # Convert error to dictionary for logging
+    error_info = e.to_dict()
+
+    # error_info contains:
+    # {
+    #     'error_type': 'NotFoundError',
+    #     'message': 'Transaction not found',
+    #     'status_code': 404,
+    #     'error_code': 'NOT_FOUND',
+    #     'request_id': 'req_abc123',
+    #     'data': {...}  # Full API response
+    # }
+
+    # Log to monitoring system
+    logger.error("Transaction not found", extra=error_info)
+```
+
+### Handling Different Error Types
+
+```python
+try:
+    deposit = hunter.deposit(...)
+
+except ValidationError as e:
+    # 400 - Invalid parameters
+    print(f"Invalid request: {e.message}")
+    print(f"Details: {e.data}")
+
+except AuthenticationError as e:
+    # 401 - Authentication failed
+    print(f"Authentication failed: {e.message}")
+
+except InsufficientBalanceError as e:
+    # 402 - Insufficient balance (specific type of PaymentError)
+    available = e.get_detail('available_balance', 0)
+    print(f"Insufficient balance. Available: {available}")
+
+except PaymentError as e:
+    # 402 - Other payment errors
+    print(f"Payment failed: {e.message}")
+
+except NotFoundError as e:
+    # 404 - Resource not found
+    print(f"Not found: {e.message}")
+
+except ServerError as e:
+    # 500/502/503/504 - Server errors (retryable)
+    print(f"Server error: {e.message}")
+    print(f"Request ID: {e.request_id}")
+
+except NetworkError as e:
+    # Network/connection errors
+    print(f"Network error: {e.message}")
+
+except HunterTechPayError as e:
+    # Catch all other errors
+    print(f"Unexpected error: {e}")
+```
+
+### Complete Example with Retry Logic
+
+```python
+import time
+
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        result = hunter.deposit(
+            amount=5000.00,
+            currency='XAF',
+            country='CM',
+            phone='+237690000000',
+            service_code='OM_CM_CASHIN'
+        )
+        print(f"Success: {result.transaction_id}")
+        break
+
+    except (ServerError, NetworkError) as e:
+        # Retry on server/network errors
+        if attempt < max_retries - 1:
+            wait_time = 2 ** attempt
+            print(f"Error: {e.message}. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
+        else:
+            print(f"Failed after {max_retries} attempts")
+            # Log full error details
+            error_info = e.to_dict()
+            logger.error("Deposit failed", extra=error_info)
+            raise
+
+    except ValidationError as e:
+        # Don't retry validation errors
+        print(f"Validation error: {e}")
+        print(f"Fix parameters and try again")
+        break
+```
+
+For complete error handling examples, see `error_handling_examples.py`.
 
 ---
 

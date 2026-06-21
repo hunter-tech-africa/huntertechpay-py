@@ -10,7 +10,7 @@ long_description = readme_file.read_text() if readme_file.exists() else ""
 
 setup(
     name="huntertechpay",
-    version="1.0.0",
+    version="1.0.1",
     author="HunterTechPay",
     author_email="support@huntertechpay.com",
     description="Official Python SDK for HunterTechPay mobile money API",
